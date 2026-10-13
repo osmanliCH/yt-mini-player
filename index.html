@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>YT Mini Player</title>
+    <style>
+        :root {
+            --text-main: #ffffff;
+            --text-sec: rgba(255, 255, 255, 0.72);
+            --accent-1: #ffbe0b;
+            --accent-2: #fb5607;
+            --accent-3: #ff006e;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: transparent !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text-main);
+            user-select: none;
+        }
+
+        button, button:focus, button:focus-visible {
+            outline: none !important;
+            box-shadow: none;
+        }
+
+        .player-card {
+            width: 100vw;
+            height: 100vh;
+            background: rgba(13, 13, 18, 0.9);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.13);
+            border-radius: 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            padding: 12px 14px;
+            box-sizing: border-box;
+            position: relative;
+            overflow: hidden;
+            transition: opacity 0.32s cubic-bezier(0.4, 0, 0.2, 1), filter 0.32s cubic-bezier(0.4, 0, 0.2, 1), transform 0.32s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s;
+            opacity: 1;
+            filter: blur(0px) brightness(1);
+            perspective: 600px;
+        }
+
+            .player-card.is-moving {
+                box-shadow: inset 0 0 0 1.5px var(--accent-1), inset 0 -10px 28px rgba(251, 86, 7, 0.22);
+            }
+
+        body.dissolve .player-card {
+            transform: scale(0.9) translateY(-14px);
+            opacity: 0;
+            filter: blur(12px) brightness(2.2) saturate(200%);
+            box-shadow: inset 0 0 35px var(--accent-1);
+            pointer-events: none;
+        }
+
+        .ambient-bg {
+            position: absolute;
+            inset: -60%;
+            width: 220%;
+            height: 220%;
+            object-fit: cover;
+            filter: blur(44px) saturate(165%);
+            opacity: 0.38;
+            z-index: 0;
+            transition: opacity 0.4s, filter 0.3s;
+            pointer-events: none;
+            will-change: transform, opacity;
+        }
+
+        .player-card.is-moving .ambient-bg {
+            opacity: 0.65;
+            filter: blur(30px) saturate(220%) brightness(1.2);
+        }
+
+        /* === PHYSIKALISCHE BEAT- & GESANGS-PLASMAWELLE === */
+        #waveCanvas {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            width: 100%;
+            height: 90px;
+            z-index: 1;
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+
+        .drag-area {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            cursor: grab;
+        }
+
+            .drag-area:active {
+                cursor: grabbing;
+            }
+
+        .main-row {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 66px;
+            flex-shrink: 0;
+            z-index: 2;
+            pointer-events: none;
+            will-change: transform;
+            transform-style: preserve-3d;
+        }
+
+        .cover-wrapper, .progress-bar-bg, .controls, .top-bar, .history-drawer {
+            pointer-events: auto;
+        }
+
+        .cover-wrapper {
+            position: relative;
+            width: 64px;
+            height: 64px;
+            flex-shrink: 0;
+            cursor: pointer;
+            border-radius: 11px;
+            overflow: hidden;
+            box-shadow: 0 5px 14px rgba(0,0,0,0.55);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            box-sizing: border-box;
+            will-change: transform, box-shadow, border-color;
+            transition: box-shadow 0.06s, border-color 0.06s;
+        }
+
+        .cover {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: #22222c;
+        }
+
+        .copy-badge {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.78);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--accent-1);
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+            .copy-badge.show {
+                opacity: 1;
+            }
+
+        .info {
+            flex-grow: 1;
+            margin-left: 14px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.85);
+        }
+
+        .title-mask {
+            width: calc(100% - 26px);
+            overflow: hidden;
+            white-space: nowrap;
+            margin-bottom: 2px;
+            position: relative;
+        }
+
+            .title-mask.is-scrolling {
+                mask-image: linear-gradient(to right, transparent 0%, black 5%, black 92%, transparent 100%);
+                -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 92%, transparent 100%);
+            }
+
+        .title {
+            display: inline-block;
+            font-size: 13.5px;
+            font-weight: 600;
+            letter-spacing: 0.15px;
+        }
+
+        .title-mask.is-scrolling .title {
+            animation: marquee-pingpong 9s ease-in-out infinite alternate;
+        }
+
+        @keyframes marquee-pingpong {
+            0%, 18% {
+                transform: translateX(0px);
+            }
+
+            82%, 100% {
+                transform: translateX(var(--scroll-dist, 0px));
+            }
+        }
+
+        .artist {
+            font-size: 11.5px;
+            color: var(--text-sec);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 8px;
+        }
+
+        .progress-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            position: relative;
+        }
+
+        .progress-bar-bg {
+            flex-grow: 1;
+            height: 4.5px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+            transition: height 0.15s, background 0.15s;
+        }
+
+            .progress-bar-bg:hover {
+                height: 6.5px;
+                background: rgba(255, 255, 255, 0.25);
+            }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            position: relative;
+            background: linear-gradient(90deg, var(--accent-3), var(--accent-2), var(--accent-1));
+            border-radius: 4px;
+            box-shadow: 0 0 10px var(--accent-2);
+            transition: width 0.15s linear;
+            pointer-events: none;
+        }
+
+            .progress-bar-fill::after {
+                content: '';
+                position: absolute;
+                right: -2px;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: #ffffff;
+                box-shadow: 0 0 8px 2px var(--accent-1);
+            }
+
+        .seek-tooltip {
+            position: absolute;
+            top: -22px;
+            left: 0;
+            transform: translateX(-50%) scale(0.9);
+            background: rgba(12, 12, 18, 0.92);
+            border: 1px solid var(--accent-1);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 1.5px 5px;
+            border-radius: 5px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s, transform 0.12s;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+            z-index: 10;
+        }
+
+        .progress-bar-bg:hover .seek-tooltip {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
+        }
+
+        .time-text {
+            font-size: 9.5px;
+            color: var(--text-sec);
+            font-variant-numeric: tabular-nums;
+            flex-shrink: 0;
+            min-width: 48px;
+            text-align: right;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+
+        button.ctrl-btn {
+            background: none;
+            border: none;
+            color: var(--text-main);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px;
+            border-radius: 50%;
+            transition: all 0.18s;
+            opacity: 0.85;
+            filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));
+        }
+
+            button.ctrl-btn:hover, button.ctrl-btn.hotkey-flash {
+                opacity: 1;
+                background: rgba(255, 255, 255, 0.18);
+                transform: scale(1.1);
+                box-shadow: 0 0 12px rgba(255, 190, 11, 0.25);
+            }
+
+            button.ctrl-btn:active {
+                transform: scale(0.94);
+            }
+
+            button.ctrl-btn.active-toggle {
+                opacity: 1;
+                background: rgba(255, 255, 255, 0.22);
+                color: var(--accent-1);
+            }
+
+        svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+
+        .play-btn svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        .top-bar {
+            position: absolute;
+            top: 5px;
+            right: 7px;
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .hud-badge {
+            font-size: 9.5px;
+            font-weight: 700;
+            color: var(--accent-1);
+            background: rgba(0, 0, 0, 0.72);
+            padding: 2px 6px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            opacity: 0;
+            transform: translateX(4px);
+            transition: opacity 0.2s, transform 0.2s;
+            pointer-events: none;
+            font-variant-numeric: tabular-nums;
+        }
+
+            .hud-badge.show {
+                opacity: 1;
+                transform: translateX(0);
+            }
+
+        .theme-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            box-shadow: 0 0 6px var(--accent-1);
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+
+        .player-card:hover .theme-dot {
+            opacity: 0.75;
+        }
+
+        .theme-dot:hover {
+            opacity: 1 !important;
+            transform: scale(1.3);
+        }
+
+        .top-action-btn {
+            padding: 4px;
+            opacity: 0.35;
+            background: none;
+            border: none;
+            color: var(--text-sec);
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .player-card:hover .top-action-btn {
+            opacity: 0.75;
+        }
+
+        .top-action-btn:hover, .top-action-btn.wheel-active {
+            opacity: 1 !important;
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.16);
+            transform: scale(1.08);
+        }
+
+        .top-action-btn.muted {
+            opacity: 0.95 !important;
+            color: #f87171;
+            background: rgba(248, 113, 113, 0.18);
+        }
+
+        .top-action-btn svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .history-drawer {
+            width: 100%;
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.12);
+            z-index: 2;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            will-change: transform;
+        }
+
+        body.history-open .history-drawer {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .history-header {
+            font-size: 9.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: rgba(255, 255, 255, 0.45);
+            margin-bottom: 2px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .history-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 6px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 11.5px;
+        }
+
+            .history-item:hover {
+                background: rgba(255, 255, 255, 0.14);
+            }
+
+        .history-song {
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 195px;
+        }
+
+        .history-artist {
+            font-size: 10.5px;
+            color: var(--text-sec);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 110px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .history-empty {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.4);
+            font-style: italic;
+            padding: 8px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="player-card" id="playerCard">
+        <img id="ambient-bg" class="ambient-bg" src="" alt="">
+
+        <!-- Echte Audio-Reaktive Flüssigkeits- & Feuer-Physik -->
+        <canvas id="waveCanvas"></canvas>
+
+        <div class="drag-area" id="dragArea"></div>
+
+        <div class="top-bar">
+            <div class="hud-badge" id="hudBadge">100%</div>
+            <div class="theme-dot" id="themeDot" title="Farbwelt wechseln (Phoenix Fire / Auto Cover / Cyber Plasma / Solar)"></div>
+            <button class="top-action-btn" id="muteBtn" title="Stumm / Ton an (Mausrad = Lautstärke)">
+                <svg id="icon-vol" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" /></svg>
+                <svg id="icon-mute" viewBox="0 0 24 24" style="display: none;"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
+            </button>
+        </div>
+
+        <div class="main-row" id="mainRow">
+            <div class="cover-wrapper" id="coverCopy" title="Klicken: Songtitel kopieren">
+                <img id="thumb" class="cover" src="" alt="Cover" style="opacity: 0;">
+                <div class="copy-badge" id="coverBadge">Kopiert!</div>
+            </div>
+
+            <div class="info">
+                <div class="title-mask" id="titleMask">
+                    <div class="title" id="title">Keine Wiedergabe</div>
+                </div>
+                <div class="artist" id="artist">Warte auf YouTube Music...</div>
+
+                <div class="progress-row">
+                    <div class="progress-bar-bg" id="progressBar">
+                        <div class="seek-tooltip" id="seekTooltip">0:00</div>
+                        <div class="progress-bar-fill" id="progressFill"></div>
+                    </div>
+                    <div class="time-text" id="timeText">0:00 / 0:00</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button id="prevBtn" class="ctrl-btn" title="Zurück (Ctrl+Alt+B)">
+                    <svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z" /></svg>
+                </button>
+                <button id="playPauseBtn" class="ctrl-btn play-btn" title="Play/Pause (Ctrl+Alt+P)">
+                    <svg id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                    <svg id="icon-pause" viewBox="0 0 24 24" style="display: none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                </button>
+                <button id="nextBtn" class="ctrl-btn" title="Weiter (Ctrl+Alt+N)">
+                    <svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z" /></svg>
+                </button>
+                <button id="historyBtn" class="ctrl-btn" title="Zuletzt gespielt">
+                    <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z" /></svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="history-drawer" id="historyDrawer">
+            <div class="history-header">
+                <span>Zuletzt gespielt (Klick = Kopieren)</span>
+                <span id="copyHint" style="opacity: 0; color: var(--accent-1); transition: opacity 0.2s;">Kopiert!</span>
+            </div>
+            <div class="history-list" id="historyList">
+                <div class="history-empty">Noch keine vorherigen Songs...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+                const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : null;
+                const listen = window.__TAURI__ ? window.__TAURI__.event.listen : null;
+
+                let currentPos = 0, currentDur = 0, lastReportedPos = -1;
+                let lastTrackTitle = "", lastHistoryJson = "";
+                let isMuted = false, currentVol = 100, isPlayingState = false;
+                let livePeak = 0;
+                let hudTimer = null, showingVolBar = false;
+
+                const playerCard = document.getElementById('playerCard');
+                const mainRow = document.getElementById('mainRow');
+                const coverCopy = document.getElementById('coverCopy');
+                const ambientBg = document.getElementById('ambient-bg');
+                const historyDrawer = document.getElementById('historyDrawer');
+                const muteBtn = document.getElementById('muteBtn');
+                const hudBadge = document.getElementById('hudBadge');
+                const progressFill = document.getElementById('progressFill');
+                const timeText = document.getElementById('timeText');
+                const titleMask = document.getElementById('titleMask');
+                const titleEl = document.getElementById('title');
+
+                // === 1. FARBWELTEN (Standard: PHOENIX FIRE) ===
+                const themes = [
+                    {
+                        name: 'PHOENIX FIRE',
+                        c1: [255, 205, 25],  // Weiß-Gold (Spitzen & Funken)
+                        c2: [251, 86, 7],    // Magma-Orange (Gesangs-Welle)
+                        c3: [225, 15, 70],   // Tiefes Karminrot (Bass-Fundament)
+                        hex1: '#ffbe0b', hex2: '#fb5607', hex3: '#e10f46'
+                    },
+                    {
+                        name: 'AUTO COVER',
+                        auto: true
+                    },
+                    {
+                        name: 'CYBER PLASMA',
+                        c1: [185, 255, 255],
+                        c2: [0, 242, 254],
+                        c3: [79, 70, 229],
+                        hex1: '#00f2fe', hex2: '#3b82f6', hex3: '#4f46e5'
+                    },
+                    {
+                        name: 'SOLAR ECLIPSE',
+                        c1: [253, 224, 71],
+                        c2: [244, 63, 94],
+                        c3: [147, 51, 234],
+                        hex1: '#f43f5e', hex2: '#a855f7', hex3: '#7e22ce'
+                    }
+                ];
+
+                let activePalette = { ...themes[0] };
+                let coverAutoPalette = { ...themes[0] };
+                let themeIdx = 0;
+
+                function applyPalette(pal) {
+                    activePalette = pal;
+                    document.documentElement.style.setProperty('--accent-1', pal.hex1);
+                    document.documentElement.style.setProperty('--accent-2', pal.hex2);
+                    document.documentElement.style.setProperty('--accent-3', pal.hex3);
+                }
+
+                function extractVibrantColorFromCover(imgEl) {
+                    try {
+                        const c = document.createElement('canvas');
+                        c.width = 24; c.height = 24;
+                        const cx = c.getContext('2d');
+                        cx.drawImage(imgEl, 0, 0, 24, 24);
+                        const data = cx.getImageData(0, 0, 24, 24).data;
+
+                        let bestR = 251, bestG = 86, bestB = 7, maxScore = -1;
+                        for (let i = 0; i < data.length; i += 4) {
+                            const r = data[i], g = data[i+1], b = data[i+2];
+                            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                            const lum = (max + min) / 2;
+                            const sat = max === min ? 0 : (max - min) / (255 - Math.abs(2 * lum - 255));
+                            if (lum > 45 && lum < 230) {
+                                const score = sat * 2.5 + (lum / 255);
+                                if (score > maxScore) {
+                                    maxScore = score;
+                                    bestR = r; bestG = g; bestB = b;
+                                }
+                            }
+                        }
+                        const clamp = (v) => Math.min(255, Math.max(0, Math.round(v)));
+                        const c2 = [clamp(bestR * 1.15 + 20), clamp(bestG * 1.15 + 20), clamp(bestB * 1.15 + 20)];
+                        const c1 = [clamp(c2[0] + 55), clamp(c2[1] + 55), clamp(c2[2] + 55)];
+                        const c3 = [clamp(bestR * 0.75), clamp(bestG * 0.55), clamp(bestB * 0.85)];
+
+                        coverAutoPalette = {
+                            c1, c2, c3,
+                            hex1: `rgb(${c1[0]}, ${c1[1]}, ${c1[2]})`,
+                            hex2: `rgb(${c2[0]}, ${c2[1]}, ${c2[2]})`,
+                            hex3: `rgb(${c3[0]}, ${c3[1]}, ${c3[2]})`
+                        };
+                        if (themes[themeIdx].auto) applyPalette(coverAutoPalette);
+                    } catch (e) {}
+                }
+
+                document.getElementById('themeDot').addEventListener('click', () => {
+                    themeIdx = (themeIdx + 1) % themes.length;
+                    const t = themes[themeIdx];
+                    applyPalette(t.auto ? coverAutoPalette : t);
+                    flashHudMessage(t.name);
+                });
+
+                // === 2. ECHTE AUDIO-DSP & FLÜSSIGKEITS-PHYSIK (REAGIERT AUF BEATS & GESANG) ===
+                const canvas = document.getElementById('waveCanvas');
+                const ctx = canvas.getContext('2d');
+
+                function setupWaveCanvas() {
+                    const dpr = window.devicePixelRatio || 1;
+                    canvas.width = 360 * dpr;
+                    canvas.height = 90 * dpr;
+                    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                }
+                setupWaveCanvas();
+
+                // DSP-Variablen für Auto-Gain, Beat-Erkennung und Stimm-/Gesangs-Isolation
+                let rollingFloor = 0.25;   // Filtert den komprimierten Grund-Teppich des Songs heraus
+                let rollingCeil = 0.65;    // Passt sich automatisch an laute/leise Songs an
+                let fastEnv = 0;           // Reagiert sofort auf Transienten (Drums)
+                let midEnv = 0;            // Folgt der Silben-Geschwindigkeit von Gesang (Stimme)
+                let slowEnv = 0;           // Langsamer Durchschnitt
+                let beatPulse = 0;         // Scharfer Kick-Impuls (0.0 bis 1.0)
+                let vocalSustain = 0;      // Weiche Gesangs-/Melodie-Intensität (0.0 bis 1.0)
+                let vocalHarmonicPhase = 0;
+
+                // 72 physikalische Flüssigkeitspunkte über die 360px Breite (für 2 Schichten: Beat-Fluid & Vocal-Fluid)
+                const NODES = 72;
+                const fluidBeatY = new Float32Array(NODES);
+                const fluidBeatV = new Float32Array(NODES);
+                const fluidVocalY = new Float32Array(NODES);
+                const fluidVocalV = new Float32Array(NODES);
+                const embers = [];
+
+                // Schneller Audio-Abruf (alle 30ms) + Echtzeit-Signalverarbeitung
+                setInterval(async () => {
+                    if (!invoke || !isPlayingState || isMuted) {
+                        livePeak = 0;
+                        return;
+                    }
+                    try {
+                        const raw = await invoke('get_peak');
+                        livePeak = raw || 0;
+
+                        if (livePeak < 0.005) return;
+
+                        // 1. Adaptiver De-Kompressor (entfernt den konstanten Dauer-Pegel moderner Songs!)
+                        if (livePeak < rollingFloor) {
+                            rollingFloor = rollingFloor * 0.85 + livePeak * 0.15;
+                        } else {
+                            rollingFloor = rollingFloor * 0.992 + livePeak * 0.008;
+                        }
+                        if (livePeak > rollingCeil) {
+                            rollingCeil = rollingCeil * 0.8 + livePeak * 0.2;
+                        } else {
+                            rollingCeil = Math.max(rollingFloor + 0.08, rollingCeil * 0.995 + livePeak * 0.005);
+                        }
+
+                        // Dynamisches Signal (0.0 in kurzen Gesangspausen, 1.0 bei echten Spitzen!)
+                        const span = Math.max(0.07, rollingCeil - rollingFloor * 0.82);
+                        const dynamic = Math.max(0, Math.min(1, (livePeak - rollingFloor * 0.82) / span));
+                        const shaped = Math.pow(dynamic, 1.55); // Unterdrückt Rauschen, betont echte Dynamik
+
+                        // 2. Band-Splitting in BEAT (Transienten) und GESANG (getragene Mitten)
+                        const prevFast = fastEnv;
+                        fastEnv = fastEnv * 0.35 + shaped * 0.65;
+                        midEnv = midEnv * 0.78 + shaped * 0.22;
+                        slowEnv = slowEnv * 0.93 + shaped * 0.07;
+
+                        // BEAT-DETEKTOR: Erkennt plötzliche Anstiege (Kick, Snare, Bass-Attack)
+                        const flux = Math.max(0, fastEnv - prevFast);
+                        if (flux > 0.065) {
+                            const kickStrength = Math.min(1.0, flux * 3.4);
+                            beatPulse = Math.max(beatPulse, kickStrength);
+
+                            // Jagt einen echten physikalischen Druck-Impuls in die Flüssigkeit!
+                            const centerNode = Math.floor(16 + Math.random() * 44);
+                            const radius = 6;
+                            for (let j = -radius; j <= radius; j++) {
+                                const idx = centerNode + j;
+                                if (idx >= 2 && idx < NODES - 2) {
+                                    const falloff = Math.cos((j / radius) * (Math.PI / 2));
+                                    fluidBeatV[idx] += kickStrength * 7.8 * falloff;
+                                }
+                            }
+
+                            // Spawnt glühende Feuerfunken NUR bei echten Beats!
+                            if (kickStrength > 0.22 && embers.length < 26) {
+                                const count = kickStrength > 0.55 ? 3 : 1;
+                                for (let s = 0; s < count; s++) {
+                                    const spawnX = (centerNode / (NODES - 1)) * 360 + (Math.random() - 0.5) * 35;
+                                    embers.push({
+                                        x: spawnX,
+                                        y: 86 - Math.min(28, fluidBeatY[centerNode] + 6),
+                                        vx: (Math.random() - 0.5) * 0.7,
+                                        vy: -(0.55 + Math.random() * 0.9 + kickStrength * 1.5),
+                                        radius: 1.1 + Math.random() * 1.7,
+                                        alpha: 0.95,
+                                        sway: Math.random() * Math.PI * 2
+                                    });
+                                }
+                            }
+                        }
+
+                        // GESANGS-DETEKTOR: Folgt der getragenen Stimm-Energie & Silben-Modulation
+                        const vocalRaw = Math.max(0, midEnv * 1.15 - flux * 0.9);
+                        vocalSustain = vocalSustain * 0.72 + Math.min(1.0, vocalRaw) * 0.28;
+                    } catch (e) {}
+                }, 32);
+
+                function updateFluidPhysics() {
+                    // Natürliches Abklingen, wenn Pause oder Stille zwischen zwei Wörtern herrscht
+                    if (!isPlayingState || isMuted || livePeak < 0.005) {
+                        beatPulse *= 0.82;
+                        vocalSustain *= 0.85;
+                    } else {
+                        beatPulse *= 0.88;
+                        vocalSustain *= 0.95;
+                    }
+
+                    // Phase bewegt sich NUR, wenn wirklich Gesang/Musik da ist (kein künstliches Weiterlaufen!)
+                    vocalHarmonicPhase += vocalSustain * 0.14 + beatPulse * 0.08;
+
+                    // 1. Gesangs-Anregung (Stehende Wellenknoten, die sich am Platz mit der Stimme heben & senken)
+                    if (vocalSustain > 0.015) {
+                        for (let i = 2; i < NODES - 2; i++) {
+                            const norm = i / (NODES - 1);
+                            const windowEnv = Math.pow(Math.sin(norm * Math.PI), 0.8);
+                            // Stehende Oberwellen (modulieren mit der Stimme, ohne seitlich durchzulaufen!)
+                            const voicePattern = Math.abs(Math.sin(norm * Math.PI * 4) * Math.cos(vocalHarmonicPhase))
+                                               + Math.abs(Math.sin(norm * Math.PI * 7 + 1.2) * Math.sin(vocalHarmonicPhase * 1.35)) * 0.65;
+                            const targetLift = vocalSustain * 22 * voicePattern * windowEnv;
+                            fluidVocalV[i] += (targetLift - fluidVocalY[i]) * 0.14;
+                        }
+                    }
+
+                    // 2. Echte 1D-Wellengleichung (Nachbar-Kopplung + Federkraft + Dämpfung)
+                    const tension = 0.22;    // Wie schnell sich Druckwellen nach links/rechts ausbreiten
+                    const stiffness = 0.095; // Rückstellkraft zur Nulllinie
+                    const damping = 0.84;    // Flüssigkeits-Viskosität
+
+                    for (let i = 1; i < NODES - 1; i++) {
+                        // Beat-Schicht (reagiert explosiv auf Kicks & breitet Wellenringe aus)
+                        const neighborPullBeat = (fluidBeatY[i - 1] + fluidBeatY[i + 1] - 2 * fluidBeatY[i]) * tension;
+                        fluidBeatV[i] = (fluidBeatV[i] + neighborPullBeat - fluidBeatY[i] * stiffness) * damping;
+
+                        // Gesangs-Schicht (weiche, melodische Bewegung)
+                        const neighborPullVocal = (fluidVocalY[i - 1] + fluidVocalY[i + 1] - 2 * fluidVocalY[i]) * (tension * 0.7);
+                        fluidVocalV[i] = (fluidVocalV[i] + neighborPullVocal - fluidVocalY[i] * (stiffness * 1.1)) * 0.82;
+                    }
+
+                    for (let i = 1; i < NODES - 1; i++) {
+                        fluidBeatY[i] = Math.max(0, Math.min(34, fluidBeatY[i] + fluidBeatV[i]));
+                        fluidVocalY[i] = Math.max(0, Math.min(28, fluidVocalY[i] + fluidVocalV[i]));
+                    }
+                }
+
+                // Zeichnet eine geschmeidige Kurve durch die 72 Flüssigkeitspunkte
+                function traceSmoothFluidPath(w, h, heightGetter) {
+                    const step = w / (NODES - 1);
+                    ctx.beginPath();
+                    let prevX = 0;
+                    let prevY = h - 1.5 - heightGetter(0);
+                    ctx.moveTo(prevX, prevY);
+
+                    for (let i = 1; i < NODES; i++) {
+                        const curX = i * step;
+                        const curY = h - 1.5 - heightGetter(i);
+                        const midX = (prevX + curX) * 0.5;
+                        const midY = (prevY + curY) * 0.5;
+                        ctx.quadraticCurveTo(prevX, prevY, midX, midY);
+                        prevX = curX;
+                        prevY = curY;
+                    }
+                    ctx.lineTo(w, prevY);
+                }
+
+                function renderLiquidFireWave() {
+                    const w = 360;
+                    const h = 90;
+                    ctx.clearRect(0, 0, w, h);
+
+                    updateFluidPhysics();
+
+                    const totalActivity = Math.max(beatPulse, vocalSustain);
+                    const { c1, c2, c3 } = activePalette;
+
+                    if (totalActivity > 0.004 || embers.length > 0) {
+                        ctx.globalCompositeOperation = 'lighter';
+
+                        // --- SCHICHT 1: TIEFES BASS-FUNDAMENT (Karminrot / reagiert auf Grundenergie & Kicks) ---
+                        traceSmoothFluidPath(w, h, (i) => {
+                            const env = Math.sin((i / (NODES - 1)) * Math.PI);
+                            return (fluidBeatY[i] * 0.65 + fluidVocalY[i] * 0.45 + beatPulse * 8 * env);
+                        });
+                        ctx.lineTo(w, h);
+                        ctx.lineTo(0, h);
+                        ctx.closePath();
+                        const grad1 = ctx.createLinearGradient(0, h - 32, 0, h);
+                        grad1.addColorStop(0, `rgba(${c3[0]}, ${c3[1]}, ${c3[2]}, 0.48)`);
+                        grad1.addColorStop(1, `rgba(${c3[0]}, ${c3[1]}, ${c3[2]}, 0.03)`);
+                        ctx.fillStyle = grad1;
+                        ctx.fill();
+
+                        // --- SCHICHT 2: GESANGS- & MELODIE-FLAMME (Magma-Orange / atmet mit jeder gesungenen Silbe) ---
+                        traceSmoothFluidPath(w, h, (i) => {
+                            return fluidVocalY[i] * 0.95 + fluidBeatY[i] * 0.35;
+                        });
+                        ctx.lineTo(w, h);
+                        ctx.lineTo(0, h);
+                        ctx.closePath();
+                        const grad2 = ctx.createLinearGradient(0, h - 28, 0, h);
+                        grad2.addColorStop(0, `rgba(${c2[0]}, ${c2[1]}, ${c2[2]}, 0.55)`);
+                        grad2.addColorStop(1, `rgba(${c3[0]}, ${c3[1]}, ${c3[2]}, 0.04)`);
+                        ctx.fillStyle = grad2;
+                        ctx.fill();
+
+                        // --- SCHICHT 3: BEAT-SHOCKWAVE & WEISS-GOLDENER PLASMA-KAMM ---
+                        traceSmoothFluidPath(w, h, (i) => {
+                            return fluidBeatY[i] * 0.9 + fluidVocalY[i] * 0.55;
+                        });
+
+                        // Leuchtende Oberkante (glüht bei Kicks und hohen Gesangspassagen hell auf)
+                        ctx.save();
+                        const rimAlpha = Math.min(0.95, 0.25 + vocalSustain * 0.5 + beatPulse * 0.6);
+                        ctx.strokeStyle = `rgba(255, 250, 235, ${rimAlpha})`;
+                        ctx.lineWidth = 1.4 + beatPulse * 1.1;
+                        ctx.shadowColor = `rgb(${c1[0]}, ${c1[1]}, ${c1[2]})`;
+                        ctx.shadowBlur = 6 + beatPulse * 10;
+                        ctx.stroke();
+                        ctx.restore();
+
+                        ctx.lineTo(w, h);
+                        ctx.lineTo(0, h);
+                        ctx.closePath();
+                        const grad3 = ctx.createLinearGradient(0, h - 26, 0, h);
+                        grad3.addColorStop(0, `rgba(${c1[0]}, ${c1[1]}, ${c1[2]}, ${0.35 + beatPulse * 0.35})`);
+                        grad3.addColorStop(1, `rgba(${c2[0]}, ${c2[1]}, ${c2[2]}, 0.05)`);
+                        ctx.fillStyle = grad3;
+                        ctx.fill();
+
+                        // --- AUFSTEIGENDE FEUERFUNKEN (NUR BEI ECHTEN BEATS!) ---
+                        for (let i = embers.length - 1; i >= 0; i--) {
+                            const p = embers[i];
+                            p.sway += 0.09;
+                            p.x += p.vx + Math.sin(p.sway) * 0.2;
+                            p.y += p.vy;
+                            p.alpha -= 0.024;
+
+                            if (p.alpha <= 0 || p.y < 36) {
+                                embers.splice(i, 1);
+                                continue;
+                            }
+
+                            const eGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 2.5);
+                            eGrad.addColorStop(0, `rgba(255, 255, 255, ${p.alpha})`);
+                            eGrad.addColorStop(0.45, `rgba(${c1[0]}, ${c1[1]}, ${c1[2]}, ${p.alpha * 0.85})`);
+                            eGrad.addColorStop(1, `rgba(${c2[0]}, ${c2[1]}, ${c2[2]}, 0)`);
+
+                            ctx.fillStyle = eGrad;
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, p.radius * 2.5, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                        ctx.globalCompositeOperation = 'source-over';
+
+                        // Cover reagiert physisch auf den Beat (leichter Kick-Impuls + Glut-Schein)
+                        const glowRadius = Math.round(8 + vocalSustain * 10 + beatPulse * 20);
+                        coverCopy.style.borderColor = `rgba(${c1[0]}, ${c1[1]}, ${c1[2]}, ${Math.min(0.95, 0.16 + beatPulse * 0.75 + vocalSustain * 0.3)})`;
+                        coverCopy.style.boxShadow = `0 5px 14px rgba(0,0,0,0.55), 0 0 ${glowRadius}px rgba(${c2[0]}, ${c2[1]}, ${c2[2]}, ${0.3 + beatPulse * 0.5})`;
+                    } else {
+                        coverCopy.style.borderColor = 'rgba(255, 255, 255, 0.14)';
+                        coverCopy.style.boxShadow = '0 5px 14px rgba(0,0,0,0.55)';
+                    }
+
+                    requestAnimationFrame(renderLiquidFireWave);
+                }
+                requestAnimationFrame(renderLiquidFireWave);
+
+                // === 3. SMART MARQUEE FÜR LANGE TITEL ===
+                function updateTitleMarquee(newTitle) {
+                    titleEl.innerText = newTitle;
+                    titleMask.classList.remove('is-scrolling');
+                    titleMask.style.removeProperty('--scroll-dist');
+
+                    requestAnimationFrame(() => {
+                        const overflow = titleEl.scrollWidth - titleMask.clientWidth;
+                        if (overflow > 4) {
+                            titleMask.style.setProperty('--scroll-dist', `-${overflow + 10}px`);
+                            titleMask.classList.add('is-scrolling');
+                        }
+                    });
+                }
+
+                // === 4. ELASTISCHE DRAG-PHYSIK ===
+                let lastWinX = null, lastWinY = null;
+                let targetX = 0, targetY = 0, curX = 0, curY = 0, velX = 0, velY = 0;
+                let moveResetTimer = null;
+
+                function registerWindowMove(x, y) {
+                    if (lastWinX !== null && lastWinY !== null) {
+                        const dx = x - lastWinX;
+                        const dy = y - lastWinY;
+                        if (Math.abs(dx) < 150 && Math.abs(dy) < 150) {
+                            targetX = Math.max(-18, Math.min(18, -dx * 0.65));
+                            targetY = Math.max(-12, Math.min(12, -dy * 0.65));
+                            playerCard.classList.add('is-moving');
+                            clearTimeout(moveResetTimer);
+                            moveResetTimer = setTimeout(() => {
+                                targetX = 0; targetY = 0;
+                                playerCard.classList.remove('is-moving');
+                            }, 90);
+                        }
+                    }
+                    lastWinX = x; lastWinY = y;
+                }
+
+                if (listen) {
+                    listen('window-moved', (event) => {
+                        if (Array.isArray(event.payload)) registerWindowMove(event.payload[0], event.payload[1]);
+                    });
+                    listen('fade-out', () => { document.body.classList.add('dissolve'); });
+                    listen('fade-in', () => { document.body.classList.remove('dissolve'); });
+                    listen('hotkey-pulse', (event) => {
+                        const btnId = event.payload === 'next' ? 'nextBtn' : event.payload === 'prev' ? 'prevBtn' : 'playPauseBtn';
+                        const btn = document.getElementById(btnId);
+                        if (btn) {
+                            btn.classList.add('hotkey-flash');
+                            setTimeout(() => btn.classList.remove('hotkey-flash'), 220);
+                        }
+                    });
+                }
+
+                function updateDragPhysics() {
+                    velX = (velX + (targetX - curX) * 0.18) * 0.72;
+                    velY = (velY + (targetY - curY) * 0.18) * 0.72;
+                    curX += velX; curY += velY;
+
+                    if (Math.abs(curX) > 0.05 || Math.abs(curY) > 0.05 || Math.abs(velX) > 0.05) {
+                        const skewX = curX * 0.45;
+                        const scale = Math.max(0.94, 1 - (Math.hypot(curX, curY) * 0.003));
+                        mainRow.style.transform = `translate3d(${curX}px, ${curY}px, 0) skewX(${skewX}deg) scale(${scale})`;
+                        historyDrawer.style.transform = `translate3d(${curX * 0.6}px, ${curY * 0.6}px, 0)`;
+                        coverCopy.style.transform = `perspective(300px) rotateY(${-curX * 1.6}deg) rotateX(${curY * 1.6}deg) scale(${scale})`;
+                        ambientBg.style.transform = `translate3d(${-curX * 2.2}px, ${-curY * 2.2}px, 0) scale(1.15)`;
+                    } else {
+                        mainRow.style.transform = '';
+                        historyDrawer.style.transform = '';
+                        // Leichtes Mitfedern des Covers beim Bass-Kick, wenn das Fenster ruhig steht
+                        const kickZoom = 1 + beatPulse * 0.035;
+                        coverCopy.style.transform = kickZoom > 1.003 ? `scale(${kickZoom.toFixed(3)})` : '';
+                        ambientBg.style.transform = '';
+                    }
+                    requestAnimationFrame(updateDragPhysics);
+                }
+                requestAnimationFrame(updateDragPhysics);
+
+                document.getElementById('dragArea').addEventListener('mousedown', (e) => {
+                    if (e.button === 0 && invoke) {
+                        velY = 2.5;
+                        playerCard.classList.add('is-moving');
+                        setTimeout(() => playerCard.classList.remove('is-moving'), 250);
+                        invoke('start_drag');
+                    }
+                });
+
+                // === 5. HUD & LAUTSTÄRKE ===
+                function syncMuteIcon(muted, vol) {
+                    isMuted = muted;
+                    currentVol = vol;
+                    muteBtn.classList.toggle('muted', isMuted);
+                    document.getElementById('icon-vol').style.display = isMuted ? 'none' : 'block';
+                    document.getElementById('icon-mute').style.display = isMuted ? 'block' : 'none';
+                }
+
+                function flashHudMessage(text) {
+                    hudBadge.innerText = text;
+                    hudBadge.classList.add('show');
+                    clearTimeout(hudTimer);
+                    hudTimer = setTimeout(() => hudBadge.classList.remove('show'), 950);
+                }
+
+                function showVolumeHud(vol, muted) {
+                    syncMuteIcon(muted, vol);
+                    hudBadge.innerText = muted ? 'MUTE' : `${vol}%`;
+                    hudBadge.classList.add('show');
+                    muteBtn.classList.add('wheel-active');
+
+                    showingVolBar = true;
+                    progressFill.style.width = muted ? '0%' : `${vol}%`;
+                    timeText.innerText = muted ? 'STUMM' : `VOL ${vol}%`;
+
+                    clearTimeout(hudTimer);
+                    hudTimer = setTimeout(() => {
+                        hudBadge.classList.remove('show');
+                        muteBtn.classList.remove('wheel-active');
+                        showingVolBar = false;
+                        updateProgressBarUI();
+                    }, 950);
+                }
+
+                muteBtn.addEventListener('click', async () => {
+                    if (!invoke) return;
+                    const res = await invoke('media_control', { action: 'mute' });
+                    if (res && typeof res.muted === 'boolean') showVolumeHud(res.volume, res.muted);
+                });
+
+                window.addEventListener('wheel', async (e) => {
+                    if (!invoke) return;
+                    e.preventDefault();
+                    const act = e.deltaY < 0 ? 'vol_up' : 'vol_down';
+                    const res = await invoke('media_control', { action: act });
+                    if (res && typeof res.volume === 'number') showVolumeHud(res.volume, res.muted);
+                }, { passive: false });
+
+                // === 6. PLAYER CONTROLS & TIMELINE ===
+                document.getElementById('playPauseBtn').addEventListener('click', async () => { if (invoke) await invoke('media_control', { action: 'playpause' }); });
+                document.getElementById('nextBtn').addEventListener('click', async () => { if (invoke) await invoke('media_control', { action: 'next' }); });
+                document.getElementById('prevBtn').addEventListener('click', async () => { if (invoke) await invoke('media_control', { action: 'prev' }); });
+
+                document.getElementById('coverCopy').addEventListener('click', () => {
+                    const t = titleEl.innerText;
+                    const a = document.getElementById('artist').innerText;
+                    if (t && t !== "Keine Wiedergabe") {
+                        navigator.clipboard.writeText(`${t} - ${a}`);
+                        const badge = document.getElementById('coverBadge');
+                        badge.classList.add('show');
+                        setTimeout(() => badge.classList.remove('show'), 1000);
+                    }
+                });
+
+                const progressBar = document.getElementById('progressBar');
+                const seekTooltip = document.getElementById('seekTooltip');
+
+                progressBar.addEventListener('mousemove', (e) => {
+                    if (currentDur <= 0) return;
+                    const rect = progressBar.getBoundingClientRect();
+                    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    seekTooltip.style.left = `${ratio * 100}%`;
+                    seekTooltip.innerText = formatTime(Math.floor(ratio * currentDur));
+                });
+
+                progressBar.addEventListener('click', async (e) => {
+                    if (!invoke || currentDur <= 0) return;
+                    const rect = progressBar.getBoundingClientRect();
+                    const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    const targetSeconds = Math.floor(clickRatio * currentDur);
+                    currentPos = targetSeconds;
+                    showingVolBar = false;
+                    updateProgressBarUI();
+                    await invoke('seek_media', { seconds: targetSeconds });
+                });
+
+                let isHistoryOpen = false;
+                const historyBtn = document.getElementById('historyBtn');
+                historyBtn.addEventListener('click', async () => {
+                    if (!invoke) return;
+                    isHistoryOpen = !isHistoryOpen;
+                    if (isHistoryOpen) {
+                        document.body.classList.add('history-open');
+                        historyBtn.classList.add('active-toggle');
+                        await invoke('resize_window', { width: 360, height: 195 });
+                    } else {
+                        document.body.classList.remove('history-open');
+                        historyBtn.classList.remove('active-toggle');
+                        await invoke('resize_window', { width: 360, height: 90 });
+                    }
+                });
+
+                function formatTime(secs) {
+                    if (!secs || secs < 0) return "0:00";
+                    const m = Math.floor(secs / 60);
+                    const s = Math.floor(secs % 60);
+                    return `${m}:${s < 10 ? '0' : ''}${s}`;
+                }
+
+                function updateProgressBarUI() {
+                    if (showingVolBar) return;
+                    if (currentDur > 0) {
+                        const percent = Math.min(100, Math.max(0, (currentPos / currentDur) * 100));
+                        progressFill.style.width = `${percent}%`;
+                        timeText.innerText = `${formatTime(currentPos)} / ${formatTime(currentDur)}`;
+                    } else {
+                        progressFill.style.width = '0%';
+                        timeText.innerText = "0:00 / 0:00";
+                    }
+                }
+
+                function renderHistory(historyArray) {
+                    const jsonStr = JSON.stringify(historyArray || []);
+                    if (jsonStr === lastHistoryJson) return;
+                    lastHistoryJson = jsonStr;
+
+                    const listEl = document.getElementById('historyList');
+                    if (!historyArray || historyArray.length === 0) {
+                        listEl.innerHTML = '<div class="history-empty">Noch keine vorherigen Songs...</div>';
+                        return;
+                    }
+
+                    listEl.innerHTML = '';
+                    historyArray.forEach((item) => {
+                        const row = document.createElement('div');
+                        row.className = 'history-item';
+
+                        const songSpan = document.createElement('span');
+                        songSpan.className = 'history-song';
+                        songSpan.innerText = item.title;
+
+                        const artistSpan = document.createElement('span');
+                        artistSpan.className = 'history-artist';
+                        artistSpan.innerText = item.artist;
+
+                        row.appendChild(songSpan);
+                        row.appendChild(artistSpan);
+
+                        row.addEventListener('click', () => {
+                            navigator.clipboard.writeText(`${item.title} - ${item.artist}`);
+                            const hint = document.getElementById('copyHint');
+                            hint.style.opacity = '1';
+                            setTimeout(() => { hint.style.opacity = '0'; }, 1200);
+                        });
+
+                        listEl.appendChild(row);
+                    });
+                }
+
+                async function updateMedia() {
+                    if (!invoke) return;
+                    try {
+                        const info = await invoke('get_media_info');
+                        if (info && info.title) {
+                            if (!showingVolBar && typeof info.muted === 'boolean') {
+                                syncMuteIcon(info.muted, info.volume ?? currentVol);
+                            }
+
+                            if (titleEl.innerText !== info.title) {
+                                updateTitleMarquee(info.title);
+                            }
+                            document.getElementById('artist').innerText = info.artist;
+
+                            const iconPlay = document.getElementById('icon-play');
+                            const iconPause = document.getElementById('icon-pause');
+                            isPlayingState = info.status === 'Playing';
+
+                            if (isPlayingState) {
+                                iconPlay.style.display = 'none'; iconPause.style.display = 'block';
+                            } else {
+                                iconPlay.style.display = 'block'; iconPause.style.display = 'none';
+                                livePeak = 0;
+                            }
+
+                            currentDur = info.duration || 0;
+                            if (info.title !== lastTrackTitle) {
+                                lastTrackTitle = info.title;
+                                currentPos = info.position || 0;
+                                lastReportedPos = info.position || 0;
+                                // Reset der Auto-Gain-Kalibrierung beim Songwechsel
+                                rollingFloor = 0.2;
+                                rollingCeil = 0.6;
+                            } else if (info.position !== lastReportedPos) {
+                                currentPos = info.position;
+                                lastReportedPos = info.position;
+                            } else if (isPlayingState && currentDur > 0 && currentPos < currentDur) {
+                                currentPos += 1;
+                            }
+
+                            updateProgressBarUI();
+                            renderHistory(info.history);
+
+                            const thumbImg = document.getElementById('thumb');
+                            if (thumbImg.dataset.title !== info.title) {
+                                thumbImg.dataset.title = info.title;
+                                if (info.thumbnail && info.thumbnail.length > 0) {
+                                    const blob = new Blob([new Uint8Array(info.thumbnail)], { type: 'image/jpeg' });
+                                    const url = URL.createObjectURL(blob);
+                                    thumbImg.onload = () => extractVibrantColorFromCover(thumbImg);
+                                    thumbImg.src = url;
+                                    ambientBg.src = url;
+                                    thumbImg.style.opacity = '1';
+                                } else {
+                                    thumbImg.style.opacity = '0'; ambientBg.src = "";
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                updateMedia();
+                setInterval(updateMedia, 1000);
+    </script>
+</body>
+</html>
