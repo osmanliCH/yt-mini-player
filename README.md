@@ -24,7 +24,7 @@ Make sure you have [Rust](https://www.rust-lang.org/) and [Node.js](https://node
 
 ```bash
 # Clone the repository
-git clone [https://github.com/osmanliCH/yt-mini-player.git](https://github.com/osmanliCH/yt-mini-player.git)
+git clone [https://github.com/osmanliCH/yt-mini-plyer.git](https://github.com/osmanliCH/yt-mini-plyer.git)
 cd yt-mini-player
 
 # Install dependencies
